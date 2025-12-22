@@ -1,0 +1,88 @@
+name: Deploy Laravel to AWS
+
+on:
+  push:
+    branches:
+      - main
+      # - master  # Uncomment if your default branch is master
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+env:
+  APP_PATH: /home/ubuntu/naff-staff/naff-backend
+
+jobs:
+  deploy:
+    name: Deploy to AWS Server
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to Server
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+            cd ${{ env.APP_PATH }}
+
+            # Enable maintenance mode
+            php artisan down --message="Deploying updates..." --retry=60 || true
+
+            # Pull latest changes
+            git pull origin main
+
+            # Install/update composer dependencies
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+            # Run database migrations
+            php artisan migrate --force
+
+            # Clear and cache configurations
+            php artisan config:clear
+            php artisan config:cache
+
+            # Clear and cache routes
+            php artisan route:clear
+            php artisan route:cache
+
+            # Clear and cache views
+            php artisan view:clear
+            php artisan view:cache
+
+            # Clear general cache
+            php artisan cache:clear
+
+            # Set proper permissions
+            sudo chown -R ubuntu:www-data storage bootstrap/cache
+            chmod -R 775 storage bootstrap/cache
+
+            # Restart queue workers (if using queues)
+            php artisan queue:restart || true
+
+            # Disable maintenance mode
+            php artisan up
+
+            echo "✅ Deployment completed successfully!"
+          ENDSSH
+
+      - name: Deployment Status
+        if: success()
+        run: echo "🚀 Application deployed successfully to AWS!"
+
+      - name: Deployment Failed
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          # Optionally bring the app back up if deployment failed
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+            cd ${{ env.APP_PATH }}
+            php artisan up || true
+          ENDSSH
