@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  APP_PATH: /home/ubuntu/naff-staff/naff-backend
+  APP_PATH: /home/ubuntu/nafa-staff/nafa_personel_back
 
 jobs:
   deploy:
