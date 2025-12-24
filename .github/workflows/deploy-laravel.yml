@@ -77,7 +77,7 @@ jobs:
 
             echo "✅ Disabling maintenance mode..."
             php artisan up || true
-
+            kill -9 $(lsof -t -i:8000) 2>/dev/null
             php artisan serve --host=0.0.0.0 --port=8000 &
             echo "✅ Deployment completed successfully!"
 
