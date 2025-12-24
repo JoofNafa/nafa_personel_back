@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Services\AttendanceAutoFillService;
 
-class AutoFillAttendances extends Command
+class AutoFillAttendance extends Command
 {
     protected $signature = 'attendance:fill {date?} {shift?}';
     protected $description = 'Remplit automatiquement les présences pour tous les utilisateurs.';
