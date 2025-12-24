@@ -75,7 +75,7 @@ return new class extends Migration
                 'first_name' => 'Nafa',
                 'last_name' => 'NAFA',
                 'email' => 'rha@nafa.com',
-                'phone' => '77 526 35 63',
+                'phone' => '77 526 35 64',
                 'password' => Hash::make('NAFA2025'),
                 'pin' => Hash::make('2025'),
                 'role' => 'vigile',
