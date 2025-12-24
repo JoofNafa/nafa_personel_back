@@ -77,8 +77,11 @@ jobs:
 
             echo "✅ Disabling maintenance mode..."
             php artisan up || true
-            kill -9 $(lsof -t -i:8000) 2>/dev/null
-            php artisan serve --host=0.0.0.0 --port=8000 &
+
+            echo "🔄 Restarting Laravel dev server..."
+            fuser -k 8000/tcp 2>/dev/null || true
+            nohup php artisan serve --host=0.0.0.0 --port=8000 > /dev/null 2>&1 &
+            
             echo "✅ Deployment completed successfully!"
 
       - name: Deployment Status
