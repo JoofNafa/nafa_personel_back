@@ -78,7 +78,7 @@ jobs:
             echo "✅ Disabling maintenance mode..."
             php artisan up || true
 
-            php artisan serve --port=8000
+            php artisan serve --port=8000 &
             echo "✅ Deployment completed successfully!"
 
       - name: Deployment Status
