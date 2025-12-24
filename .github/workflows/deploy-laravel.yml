@@ -22,40 +22,55 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            set -e
+
             echo "🚀 Starting backend deployment..."
 
             cd ${{ env.APP_PATH }} || { echo "❌ Failed to cd into ${{ env.APP_PATH }}"; exit 1; }
 
             echo "🔧 Enabling maintenance mode..."
-            php artisan down --message="Deploying updates..." --retry=60 || true
+            php artisan down --retry=60 || true
 
             echo "📥 Pulling latest changes from main..."
-            git pull origin main || { echo "❌ git pull failed"; php artisan up || true; exit 1; }
+            git pull origin main
 
-            echo "📦 Installing composer dependencies..."
-            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev || { echo "❌ composer install failed"; php artisan up || true; exit 1; }
+            echo "🧽 Clearing bootstrap cache files..."
+            rm -f bootstrap/cache/*.php || true
+
+            echo "📦 Installing composer dependencies (no-dev)..."
+            if ! composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev; then
+              echo "⚠️ composer install failed. Doing a clean vendor reinstall..."
+              rm -rf vendor
+              composer clear-cache || true
+              composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            fi
+
+            echo "🔁 Rebuilding optimized autoload..."
+            composer dump-autoload -o
+
+            echo "📦 Discovering packages..."
+            php artisan package:discover --ansi || true
+
+            echo "🔎 Checking PHP MySQL driver..."
+            if ! php -m | grep -q pdo_mysql; then
+              echo "❌ Missing PHP extension: pdo_mysql"
+              echo "➡️ Install it on server: sudo apt-get install -y php8.2-mysql && restart php-fpm/nginx/apache"
+              php artisan up || true
+              exit 1
+            fi
 
             echo "🗄️ Running migrations..."
-            php artisan migrate --force || { echo "❌ migrations failed"; php artisan up || true; exit 1; }
+            php artisan migrate --force
 
-            echo "🧹 Clearing and caching config..."
-            php artisan config:clear
-            php artisan config:cache
-
-            echo "🛣️ Clearing and caching routes..."
-            php artisan route:clear
-            php artisan route:cache
-
-            echo "🖼️ Clearing and caching views..."
-            php artisan view:clear
-            php artisan view:cache
-
-            echo "🧽 Clearing application cache..."
-            php artisan cache:clear
+            echo "🧹 Clearing and caching config/routes/views..."
+            php artisan optimize:clear || true
+            php artisan config:cache || true
+            php artisan route:cache || true
+            php artisan view:cache || true
 
             echo "🔐 Setting permissions..."
-            sudo chown -R ubuntu:www-data storage bootstrap/cache || { echo "❌ chown failed"; php artisan up || true; exit 1; }
-            chmod -R 775 storage bootstrap/cache || { echo "❌ chmod failed"; php artisan up || true; exit 1; }
+            sudo chown -R ubuntu:www-data storage bootstrap/cache || true
+            chmod -R 775 storage bootstrap/cache || true
 
             echo "🔁 Restarting queue workers (if applicable)..."
             php artisan queue:restart || true
@@ -69,12 +84,16 @@ jobs:
         if: success()
         run: echo "🚀 Application deployed successfully to server!"
 
-      - name: Deployment Failed
+      - name: Deployment Failed (bring app back up)
         if: failure()
-        run: |
-          echo "❌ Deployment failed!"
-          echo "🛟 Attempting to bring the application back up..."
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            cd /home/ubuntu/nafa-staff/nafa_personel_back
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "❌ Deployment failed!"
+            echo "🛟 Attempting to bring the application back up..."
+            cd /home/ubuntu/nafa-staff/nafa_personel_back || exit 0
             php artisan up || true
-          ENDSSH
+            
