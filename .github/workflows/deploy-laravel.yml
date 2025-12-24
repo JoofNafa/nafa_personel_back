@@ -1,12 +1,9 @@
-name: Deploy Laravel to AWS
+name: Deploy Backend to Server
 
 on:
   push:
     branches:
       - main
-      # - master  # Uncomment if your default branch is master
-
-  # Allow manual trigger
   workflow_dispatch:
 
 env:
@@ -14,81 +11,70 @@ env:
 
 jobs:
   deploy:
-    name: Deploy to AWS Server
+    name: Deploy Backend to Server
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "🚀 Starting backend deployment..."
 
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
-        
-        # run: |
-        #   mkdir -p ~/.ssh
-        #   echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-        #   chmod 600 ~/.ssh/id_rsa
-        #   ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+            cd ${{ env.APP_PATH }} || { echo "❌ Failed to cd into ${{ env.APP_PATH }}"; exit 1; }
 
-      - name: Deploy to Server
-        run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            cd ${{ env.APP_PATH }}
-
-            # Enable maintenance mode
+            echo "🔧 Enabling maintenance mode..."
             php artisan down --message="Deploying updates..." --retry=60 || true
 
-            # Pull latest changes
-            git pull origin main
+            echo "📥 Pulling latest changes from main..."
+            git pull origin main || { echo "❌ git pull failed"; php artisan up || true; exit 1; }
 
-            # Install/update composer dependencies
-            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            echo "📦 Installing composer dependencies..."
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev || { echo "❌ composer install failed"; php artisan up || true; exit 1; }
 
-            # Run database migrations
-            php artisan migrate --force
+            echo "🗄️ Running migrations..."
+            php artisan migrate --force || { echo "❌ migrations failed"; php artisan up || true; exit 1; }
 
-            # Clear and cache configurations
+            echo "🧹 Clearing and caching config..."
             php artisan config:clear
             php artisan config:cache
 
-            # Clear and cache routes
+            echo "🛣️ Clearing and caching routes..."
             php artisan route:clear
             php artisan route:cache
 
-            # Clear and cache views
+            echo "🖼️ Clearing and caching views..."
             php artisan view:clear
             php artisan view:cache
 
-            # Clear general cache
+            echo "🧽 Clearing application cache..."
             php artisan cache:clear
 
-            # Set proper permissions
-            sudo chown -R ubuntu:www-data storage bootstrap/cache
-            chmod -R 775 storage bootstrap/cache
+            echo "🔐 Setting permissions..."
+            sudo chown -R ubuntu:www-data storage bootstrap/cache || { echo "❌ chown failed"; php artisan up || true; exit 1; }
+            chmod -R 775 storage bootstrap/cache || { echo "❌ chmod failed"; php artisan up || true; exit 1; }
 
-            # Restart queue workers (if using queues)
+            echo "🔁 Restarting queue workers (if applicable)..."
             php artisan queue:restart || true
 
-            # Disable maintenance mode
-            php artisan up
+            echo "✅ Disabling maintenance mode..."
+            php artisan up || true
 
             echo "✅ Deployment completed successfully!"
-          ENDSSH
 
       - name: Deployment Status
         if: success()
-        run: echo "🚀 Application deployed successfully to AWS!"
+        run: echo "🚀 Application deployed successfully to server!"
 
       - name: Deployment Failed
         if: failure()
         run: |
           echo "❌ Deployment failed!"
-          # Optionally bring the app back up if deployment failed
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            cd ${{ env.APP_PATH }}
+          echo "🛟 Attempting to bring the application back up..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+            cd /home/ubuntu/nafa-staff/nafa_personel_back
             php artisan up || true
           ENDSSH
