@@ -16,6 +16,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false, // JWT = stateless → pas de cookie
+    'supports_credentials' => true, // JWT = stateless → pas de cookie
 
 ];
